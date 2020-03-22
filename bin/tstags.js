@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
 'use strict'
-var tstags = require('../tstags')
+var tstags = require('../dist')
 
 tstags.main()
