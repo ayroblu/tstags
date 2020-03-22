@@ -28,7 +28,6 @@
   "homepage": "https://github.com/Perlence/tstags#readme",
   "dependencies": {
     "@types/docopt": "^0.6.31",
-    "@types/escape-string-regexp": "^2.0.1",
     "@types/glob": "^7.1.1",
     "@types/lodash": "^4.14.149",
     "@types/minimatch": "^3.0.3",
