@@ -22,4 +22,4 @@ gulp.task('build', function () {
     .pipe(gulp.dest(locations.dest))
 })
 
-gulp.task('default', ['build'])
+gulp.task('default', gulp.series('build'))

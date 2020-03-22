@@ -1,12 +1,10 @@
-/// <reference path="typings/tsd.d.ts" />
+import fs from 'fs'
+import path from 'path'
 
-import fs = require('fs')
-import path = require('path')
-
-import docopt = require('docopt')
-import glob = require('glob')
-import _ = require('lodash')
-import ts = require('typescript')
+import docopt from 'docopt'
+import glob from 'glob'
+import _ from 'lodash'
+import ts from 'typescript'
 
 var pkg = require('../package.json')
 
@@ -27,35 +25,36 @@ Options:
   --tag-relative      file paths should be relative to the directory containing the tag file [default: false]
 `
 
-var fields = {}
-fields[ts.SyntaxKind.Property] = ['p', 'property']
-fields[ts.SyntaxKind.Method] = ['m', 'method']
-fields[ts.SyntaxKind.Constructor] = ['m', 'method']
-fields[ts.SyntaxKind.GetAccessor] = ['m', 'method']
-fields[ts.SyntaxKind.SetAccessor] = ['m', 'method']
-fields[ts.SyntaxKind.VariableDeclaration] = ['v', 'variable']
-fields[ts.SyntaxKind.FunctionDeclaration] = ['f', 'function']
-fields[ts.SyntaxKind.ClassDeclaration] = ['C', 'class']
-fields[ts.SyntaxKind.InterfaceDeclaration] = ['i', 'interface']
-fields[ts.SyntaxKind.TypeAliasDeclaration] = ['t', 'typealias']
-fields[ts.SyntaxKind.EnumDeclaration] = ['e', 'enum']
-fields[ts.SyntaxKind.ModuleDeclaration] = ['M', 'module']
-fields[ts.SyntaxKind.ImportDeclaration] = ['I', 'import']
+const fields = {
+[ts.SyntaxKind.PropertyDeclaration]             : ['p', 'property'],
+[ts.SyntaxKind.MethodDeclaration]               : ['m', 'method'],
+[ts.SyntaxKind.Constructor]          : ['m', 'method'],
+[ts.SyntaxKind.GetAccessor]          : ['m', 'method'],
+[ts.SyntaxKind.SetAccessor]          : ['m', 'method'],
+[ts.SyntaxKind.VariableDeclaration]  : ['v', 'variable'],
+[ts.SyntaxKind.FunctionDeclaration]  : ['f', 'function'],
+[ts.SyntaxKind.ClassDeclaration]     : ['C', 'class'],
+[ts.SyntaxKind.InterfaceDeclaration] : ['i', 'interface'],
+[ts.SyntaxKind.TypeAliasDeclaration] : ['t', 'typealias'],
+[ts.SyntaxKind.EnumDeclaration]      : ['e', 'enum'],
+[ts.SyntaxKind.ModuleDeclaration]    : ['M', 'module'],
+[ts.SyntaxKind.ImportDeclaration]    : ['I', 'import'],
+} as const
 
-var kinds = _.uniq(_.map(_.values(fields), value => value.join('  ')))
+const kinds = _.uniq(_.map(_.values(fields), value => value.join('  ')))
 kinds.push('c  const')
 
 var scriptTargets = {
     ES3: ts.ScriptTarget.ES3,
     ES5: ts.ScriptTarget.ES5,
-    ES6: ts.ScriptTarget.ES6,
+    ES2016: ts.ScriptTarget.ES2016,
     Latest: ts.ScriptTarget.Latest,
 }
 
 interface TaggingOptions {
-    languageVersion?: ts.ScriptTarget
-    fields?: string
-    tagRelative?: boolean
+    languageVersion: ts.ScriptTarget
+    fields: string
+    tagRelative: boolean
 }
 
 interface TagHeader {
@@ -135,15 +134,15 @@ export function main() {
     if (args['--recursive']) {
         // Get all *.ts files recursively in given directories.
         filenames = _(names)
-            .map(dir => glob.sync(path.join(dir, '**', '*.ts')))
-            .flatten<string>()
+            .map(dir => glob.sync(path.join(dir, '**', '*.ts?(x)')))
+            .flatten()
             .value()
     }
     else {
         filenames = names
     }
 
-    var languageVersion = scriptTargets[args['--target']]
+    var languageVersion = scriptTargets[args['--target'] as keyof typeof scriptTargets]
     if (languageVersion == null) {
         console.error('Unsupported language version: ' + args['--target'])
         process.exit(1)
@@ -152,7 +151,7 @@ export function main() {
     var tags = new Tags({ sort: args['--sort'] })
     filenames.forEach(filename => {
         var text = fs.readFileSync(filename)
-        var source = ts.createSourceFile(filename, text.toString(), languageVersion, '0')
+        var source = ts.createSourceFile(filename, text.toString(), languageVersion, false)
 
         makeTags(tags, source, {
             languageVersion: languageVersion,
@@ -173,14 +172,14 @@ export function main() {
     }
 }
 
-function makeTags(tags: Tags, source: ts.SourceFile, options?: TaggingOptions) {
+function makeTags(tags: Tags, source: ts.SourceFile, options: TaggingOptions) {
     // options = options || {}
 
-    var scanner = ts.createScanner(options.languageVersion, /* skipTrivia */ true, source.text)
+    var scanner = ts.createScanner(options.languageVersion, /* skipTrivia */ true, source.languageVariant, source.text)
     var lines = splitLines(source.text)
     makeTag(source, undefined)
 
-    function makeTag(node, parent) {
+    function makeTag(node: ts.Node, parent?: ts.Node) {
         var entry: TagEntry = {}
         var newParent = parent
 
@@ -194,27 +193,27 @@ function makeTags(tags: Tags, source: ts.SourceFile, options?: TaggingOptions) {
             newParent = node
             break
         case ts.SyntaxKind.VariableDeclaration:
-            if (node.type != null && node.type.kind == ts.SyntaxKind.TypeLiteral)
-                newParent = node
+            //if (node.type != null && node.type.kind == ts.SyntaxKind.TypeLiteral)
+            //    newParent = node
             if (node.flags & ts.NodeFlags.Const)
                 entry.field = 'c'
             break
         }
 
-        var field = fields[node.kind]
+        var field = fields[node.kind as keyof typeof fields]
         if (field != null && (options.fields == null || options.fields.indexOf(field[0]) >= 0)) {
             entry.field = entry.field || field[0]
-            entry.name = entry.name || node.name.text
+            entry.name = entry.name || node.getText()
             // Prepend module name to all first-level declarations and
             // prepend class/interface name only to methods and
             // properties.
             if (parent != null &&
                     (parent.kind == ts.SyntaxKind.ModuleDeclaration ||
                      node.kind != ts.SyntaxKind.VariableDeclaration))
-                entry.name = parent.name.text + '#' + entry.name
+                entry.name = parent.getText() + '#' + entry.name
             entry.file = (options.tagRelative == true ?
-                          source.filename :
-                          path.resolve(source.filename))
+                          source.fileName :
+                          path.resolve(source.fileName))
 
             var firstLine = extractLine(source.text, node.pos, node.end)
             entry.address = `/^${ firstLine.text }$/`
@@ -226,7 +225,7 @@ function makeTags(tags: Tags, source: ts.SourceFile, options?: TaggingOptions) {
         ts.forEachChild(node, (node) => makeTag(node, newParent))
     }
 
-    function extractLine(text, pos, end): { line: number; text: string } {
+    function extractLine(text: string, pos: number, end: number): { line: number; text: string } {
         scanner.setTextPos(pos)
         scanner.scan()
         var tokenPos = scanner.getTokenPos()
@@ -246,7 +245,7 @@ function escapeStringRegexp(str: string) {
 
 var endingsRe = /(?:\r\n|\r|\n)/
 
-function splitLines(str) {
+function splitLines(str: string) {
     return str.split(endingsRe)
 }
 
